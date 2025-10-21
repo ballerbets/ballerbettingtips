@@ -1,0 +1,265 @@
+<!--
+Save this file as: index.html
+How to run in Visual Studio Code:
+1. Install the Live Server extension (ritwickdey.LiveServer) if you like live reload, or just open this file in your browser.
+2. Right-click the file in VS Code -> Open with Live Server (or open file:// path in your browser).
+
+Notes:
+- This is a single-file, offline-friendly demo that uses only vanilla HTML/CSS/JS (no external libraries).
+- All data (users, tips) are stored in localStorage for demo purposes.
+- Demo credentials: email: demo@user.com  password: demo123
+- For production you must implement a backend with secure authentication, hashed passwords, HTTPS, and a database.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Soccer Betting Tips — Demo</title>
+  <style>
+    :root{--bg:#071025;--card:#0b1220;--accent:#1f8ef1;--muted:#99a6b2;--glass:rgba(255,255,255,0.03)}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{margin:0;min-height:100vh;background:linear-gradient(180deg,#041225 0%,#071025 100%);color:#e8f0f6;padding:20px}
+    .wrap{max-width:1000px;margin:0 auto}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{margin:0;font-size:20px}
+    .muted{color:var(--muted);font-size:13px}
+    .card{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:16px}
+    @media(max-width:880px){.grid{grid-template-columns:1fr}}
+    input,select,textarea,button{font-family:inherit}
+    input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    button{padding:10px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:inherit}
+    .nav{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .tip{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));padding:12px;border-radius:8px;margin-bottom:10px}
+    .tip h3{margin:0 0 6px 0;font-size:15px}
+    .meta{font-size:13px;color:var(--muted);margin-bottom:8px}
+    .actions{display:flex;gap:8px}
+    .avatar{width:42px;height:42px;border-radius:8px;background:linear-gradient(45deg,#1f8ef1,#7c4dff);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .topbar{display:flex;align-items:center;gap:12px}
+    .search-row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+    .small{font-size:12px}
+    .notice{background:var(--glass);padding:10px;border-radius:8px;color:var(--muted);font-size:13px}
+    .center{display:flex;align-items:center;gap:10px}
+    .right{display:flex;gap:8px;align-items:center}
+    .muted-link{color:var(--muted);cursor:pointer;text-decoration:underline}
+    /* tiny form layout */
+    form .row{display:flex;gap:8px}
+    form .row > *{flex:1}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div>
+          <h1>⚽ Soccer Betting Tips</h1>
+          <div class="muted">Vanilla JS demo · client-side only</div>
+        </div>
+        <div class="topbar" id="auth-area"></div>
+      </header>
+
+      <div class="grid">
+        <aside>
+          <div class="card" style="padding:12px">
+            <div class="notice"><strong>Demo</strong> — Data stored only in your browser. Use demo@user.com / demo123</div>
+            <div style="height:12px"></div>
+            <div class="muted small">Navigation</div>
+            <div class="nav">
+              <button id="nav-feed" class="btn-ghost">Tip Feed</button>
+              <button id="nav-add" class="btn-ghost">Add Tip</button>
+              <button id="nav-mytips" class="btn-ghost">My Tips</button>
+              <button id="nav-stats" class="btn-ghost">Stats</button>
+            </div>
+          </div>
+        </aside>
+
+        <main>
+          <div id="main-area"></div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+<script>
+// --- Simple localStorage DB ---
+const DB = {
+  get(k, fallback){ try{ const v=localStorage.getItem(k); return v? JSON.parse(v): fallback }catch(e){return fallback} },
+  set(k,v){ localStorage.setItem(k, JSON.stringify(v)) }
+};
+
+// Seed demo data
+(function seed(){
+  if(!DB.get('users')){
+    DB.set('users', [{id:1,email:'demo@user.com',password:btoa('demo123'),name:'Demo User'}]);
+  }
+  if(!DB.get('tips')){
+    const t = [
+      {id:1,authorId:1,league:'Premier League',match:'Arsenal vs Chelsea',tip:'Arsenal to win',odds:'2.10',notes:'Confidence: Medium',likes:2,date:new Date().toISOString()},
+      {id:2,authorId:1,league:'La Liga',match:'Real Madrid vs Barcelona',tip:'Both teams to score',odds:'1.80',notes:'Confidence: Low',likes:5,date:new Date().toISOString()}
+    ];
+    DB.set('tips', t);
+  }
+})();
+
+// Auth helpers
+let CURRENT_USER = DB.get('currentUser', null);
+function saveAuth(){ DB.set('currentUser', CURRENT_USER); renderAuthArea(); }
+
+function register({name,email,password}){
+  const users = DB.get('users',[]);
+  if(users.find(u=>u.email===email)) throw new Error('User already exists');
+  const newUser = {id:Date.now(),name,email,password:btoa(password)};
+  users.push(newUser); DB.set('users',users); CURRENT_USER = {id:newUser.id,name:newUser.name,email:newUser.email}; saveAuth();
+}
+function login({email,password}){
+  const users = DB.get('users',[]);
+  const u = users.find(x=>x.email===email && x.password===btoa(password));
+  if(!u) throw new Error('Invalid credentials');
+  CURRENT_USER = {id:u.id,name:u.name,email:u.email}; saveAuth();
+}
+function logout(){ CURRENT_USER=null; saveAuth(); }
+
+// Rendering
+const authArea = document.getElementById('auth-area');
+const mainArea = document.getElementById('main-area');
+
+function renderAuthArea(){
+  authArea.innerHTML='';
+  if(CURRENT_USER){
+    const el = document.createElement('div'); el.className='center';
+    const avatar = document.createElement('div'); avatar.className='avatar'; avatar.textContent = (CURRENT_USER.name||'U')[0].toUpperCase();
+    const info = document.createElement('div'); info.innerHTML = `<div style="font-weight:700">${escapeHtml(CURRENT_USER.name)}</div><div class="small muted">${escapeHtml(CURRENT_USER.email)}</div>`;
+    const r = document.createElement('div'); r.className='right';
+    const btnAdd = document.createElement('button'); btnAdd.textContent='Add Tip'; btnAdd.onclick=()=>showView('add');
+    const btnOut = document.createElement('button'); btnOut.textContent='Logout'; btnOut.onclick=()=>{ logout(); alert('Logged out'); showView('feed'); };
+    r.appendChild(btnAdd); r.appendChild(btnOut);
+    el.appendChild(avatar); el.appendChild(info); el.appendChild(r);
+    authArea.appendChild(el);
+  }else{
+    const signIn = document.createElement('div'); signIn.style.display='flex'; signIn.style.gap='8px';
+    const btn1 = document.createElement('button'); btn1.textContent='Sign in'; btn1.onclick=()=>showLogin();
+    const btn2 = document.createElement('button'); btn2.className='btn-ghost'; btn2.textContent='Register'; btn2.onclick=()=>showRegister();
+    signIn.appendChild(btn1); signIn.appendChild(btn2);
+    authArea.appendChild(signIn);
+  }
+}
+
+// Views
+function showView(view){
+  if(view==='feed') renderFeed();
+  else if(view==='add') renderAdd();
+  else if(view==='mytips') renderMyTips();
+  else if(view==='stats') renderStats();
+}
+
+function renderFeed(filterFn){
+  const tips = DB.get('tips',[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  mainArea.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div><h2 style='margin:0'>Tip Feed</h2><div class='muted small'>${tips.length} tips</div></div>
+  <div style='display:flex;gap:8px;align-items:center'>
+  <input id='q' placeholder='Search match, tip, league...' style='padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit' />
+  <button id='clear' class='btn-ghost'>Clear</button>
+  </div></div>
+  <div id='tips-list'></div>`;
+
+  const q = document.getElementById('q'); const clear = document.getElementById('clear');
+  function refresh(){
+    let list = tips;
+    const v = q.value.trim().toLowerCase(); if(v) list = list.filter(t=>(t.match+t.tip+t.league).toLowerCase().includes(v));
+    const container = document.getElementById('tips-list'); container.innerHTML='';
+    list.forEach(t=>{
+      const el = document.createElement('div'); el.className='tip card';
+      el.innerHTML = `<h3>${escapeHtml(t.match)} <span class='muted small'>· ${escapeHtml(t.league)}</span></h3>
+        <div class='meta'>Tip: ${escapeHtml(t.tip)} · Odds: ${escapeHtml(t.odds)} · <span class='muted small'>${new Date(t.date).toLocaleString()}</span></div>
+        <div style='display:flex;justify-content:space-between;align-items:center'><div class='muted small'>${escapeHtml(t.notes||'')}</div>
+        <div class='actions'><button class='btn-ghost' data-like='${t.id}'>👍 ${t.likes||0}</button><button class='btn-ghost' data-copy='${t.id}'>Copy</button></div></div>`;
+      container.appendChild(el);
+    });
+    // attach handlers
+    container.querySelectorAll('[data-like]').forEach(b=>b.onclick=()=>{ likeTip(parseInt(b.getAttribute('data-like'))); refresh(); });
+    container.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{ const id=parseInt(b.getAttribute('data-copy')); const t = DB.get('tips',[]).find(x=>x.id===id); navigator.clipboard?.writeText(`${t.match} — ${t.tip} (${t.odds})`).then(()=>alert('Copied to clipboard')); });
+  }
+  q.addEventListener('input', refresh); clear.onclick=()=>{ q.value=''; refresh(); };
+  refresh();
+}
+
+function renderAdd(){
+  if(!CURRENT_USER){ mainArea.innerHTML='<h3>Please sign in to add tips</h3>'; return }
+  mainArea.innerHTML = `<h2>Add Tip</h2>
+    <form id='add-form' style='display:grid;gap:8px;max-width:700px'>
+      <input id='league' placeholder='League (e.g. Premier League)' required />
+      <input id='match' placeholder='Match (Team A vs Team B)' required />
+      <div class='row'><input id='tip' placeholder='Tip (e.g. Arsenal to win)' required /><input id='odds' placeholder='Odds (e.g. 2.10)' /></div>
+      <textarea id='notes' placeholder='Notes / confidence' rows='3'></textarea>
+      <div style='display:flex;gap:8px'><button type='submit'>Publish Tip</button><button type='button' id='cancel' class='btn-ghost'>Cancel</button></div>
+    </form>`;
+  const form = document.getElementById('add-form'); form.onsubmit = (e)=>{ e.preventDefault(); const league=document.getElementById('league').value.trim(); const match=document.getElementById('match').value.trim(); const tip=document.getElementById('tip').value.trim(); const odds=document.getElementById('odds').value.trim(); const notes=document.getElementById('notes').value.trim(); const tips = DB.get('tips',[]); tips.push({id:Date.now(),authorId:CURRENT_USER.id,league,match,tip,odds,notes,likes:0,date:new Date().toISOString()}); DB.set('tips',tips); alert('Tip published'); showView('feed'); };
+  document.getElementById('cancel').onclick = ()=> showView('feed');
+}
+
+function renderMyTips(){
+  if(!CURRENT_USER){ mainArea.innerHTML='<h3>Please sign in to see your tips</h3>'; return }
+  const tips = DB.get('tips',[]).filter(t=>t.authorId===CURRENT_USER.id).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  mainArea.innerHTML = `<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'><h2>My Tips</h2><div class='muted small'>${tips.length} tips</div></div><div id='my-list'></div>`;
+  const list = document.getElementById('my-list');
+  if(tips.length===0) list.innerHTML = '<div class="muted">You have not posted any tips yet.</div>';
+  tips.forEach(t=>{
+    const el = document.createElement('div'); el.className='tip card'; el.innerHTML = `<h3>${escapeHtml(t.match)}</h3><div class='meta'>${escapeHtml(t.tip)} · ${escapeHtml(t.odds)}</div><div class='actions'><button class='btn-ghost' data-del='${t.id}'>Delete</button></div>`;
+    list.appendChild(el);
+  });
+  list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this tip?')){ const id=parseInt(b.getAttribute('data-del')); const tipsAll = DB.get('tips',[]).filter(x=>x.id!==id); DB.set('tips',tipsAll); renderMyTips(); } });
+}
+
+function renderStats(){
+  const tips = DB.get('tips',[]);
+  const total = tips.length; const leagues = Array.from(new Set(tips.map(t=>t.league))).length; const likes = tips.reduce((s,t)=>s+(t.likes||0),0);
+  mainArea.innerHTML = `<h2>Stats</h2><div style='display:flex;gap:12px;margin-top:12px'><div class='card' style='padding:12px;min-width:120px'><div class='small muted'>Total tips</div><div style='font-size:20px;font-weight:700'>${total}</div></div><div class='card' style='padding:12px;min-width:120px'><div class='small muted'>Leagues</div><div style='font-size:20px;font-weight:700'>${leagues}</div></div><div class='card' style='padding:12px;min-width:120px'><div class='small muted'>Total likes</div><div style='font-size:20px;font-weight:700'>${likes}</div></div></div>`;
+}
+
+function likeTip(id){ const tips = DB.get('tips',[]).map(t=>t.id===id?{...t,likes:(t.likes||0)+1}:t); DB.set('tips',tips); }
+
+// Login / Register UI
+function showLogin(){
+  mainArea.innerHTML = `<h2>Sign in</h2>
+  <form id='login-form' style='display:grid;gap:8px;max-width:480px'>
+    <input id='email' placeholder='Email' required />
+    <input id='password' placeholder='Password' type='password' required />
+    <div style='display:flex;gap:8px'><button>Sign in</button><button type='button' id='fill' class='btn-ghost'>Fill demo</button></div>
+    <div class='muted small'>Don't have an account? <span id='to-register' class='muted-link'>Register</span></div>
+  </form>`;
+  document.getElementById('to-register').onclick = showRegister;
+  document.getElementById('fill').onclick = ()=>{ document.getElementById('email').value='demo@user.com'; document.getElementById('password').value='demo123'; };
+  document.getElementById('login-form').onsubmit = (e)=>{ e.preventDefault(); try{ login({email:document.getElementById('email').value.trim(), password:document.getElementById('password').value}); alert('Signed in'); showView('feed'); }catch(err){ alert(err.message) } };
+}
+
+function showRegister(){
+  mainArea.innerHTML = `<h2>Register</h2>
+  <form id='reg-form' style='display:grid;gap:8px;max-width:480px'>
+    <input id='rname' placeholder='Full name' required />
+    <input id='remail' placeholder='Email' required />
+    <input id='rpass' placeholder='Password' type='password' required />
+    <div style='display:flex;gap:8px'><button>Create account</button><button type='button' id='fillr' class='btn-ghost'>Fill demo</button></div>
+    <div class='muted small'>Already have an account? <span id='to-login' class='muted-link'>Sign in</span></div>
+  </form>`;
+  document.getElementById('to-login').onclick = showLogin;
+  document.getElementById('fillr').onclick = ()=>{ document.getElementById('rname').value='Demo User'; document.getElementById('remail').value='demo@user.com'; document.getElementById('rpass').value='demo123'; };
+  document.getElementById('reg-form').onsubmit = (e)=>{ e.preventDefault(); try{ register({name:document.getElementById('rname').value.trim(), email:document.getElementById('remail').value.trim(), password:document.getElementById('rpass').value}); alert('Account created'); showView('feed'); }catch(err){ alert(err.message) } };
+}
+
+// Helpers
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>\"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+
+// init nav
+document.getElementById('nav-feed').onclick = ()=>showView('feed');
+document.getElementById('nav-add').onclick = ()=>showView('add');
+document.getElementById('nav-mytips').onclick = ()=>showView('mytips');
+document.getElementById('nav-stats').onclick = ()=>showView('stats');
+
+// initial render
+renderAuthArea(); showView('feed');
+
+</script>
+</body>
+</html>
